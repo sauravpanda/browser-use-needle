@@ -10,10 +10,32 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from browser_use_needle.runtime import NeedleRuntime
-from browser_use_needle.tools import rust_action_line, tools_for_preset, tools_json
+from browser_use_needle.tools import browser_use_rust_tools, rust_action_line, tools_for_preset, tools_json
 
 
 PRESETS = ("browser-use-rust", "browser-use-python-core", "browser-use-python")
+DEMO_CASES = [
+	{
+		"name": "type-text",
+		"query": "The focused text input is ready. Type hello world.",
+		"expected": "type",
+	},
+	{
+		"name": "click-coordinate",
+		"query": "A submit button is centered at x=640 y=360. Click the submit button.",
+		"expected": "click",
+	},
+	{
+		"name": "scroll-page",
+		"query": "Scroll down by 700 pixels.",
+		"expected": "scroll",
+	},
+	{
+		"name": "finish-task",
+		"query": "The task is complete. Report that the task finished successfully.",
+		"expected": "done",
+	},
+]
 
 
 def _read_query(args: argparse.Namespace) -> str:
@@ -79,6 +101,38 @@ def cmd_run(args: argparse.Namespace) -> int:
 	return 0
 
 
+def cmd_demo(args: argparse.Namespace) -> int:
+	load_dotenv()
+	runtime = NeedleRuntime(
+		checkpoint=args.checkpoint,
+		max_gen_len=args.max_gen_len,
+		constrained=not args.no_constrained,
+		force_download=args.force_download,
+	)
+	tools = browser_use_rust_tools()
+
+	failures = 0
+	for index, case in enumerate(DEMO_CASES, 1):
+		calls = runtime.generate_calls(case["query"], tools)
+		actual = calls[0]["name"] if calls else "<none>"
+		ok = actual == case["expected"]
+		if not ok:
+			failures += 1
+
+		print(f"{index}. {case['name']}: {'ok' if ok else 'mismatch'}")
+		print(f"   query: {case['query']}")
+		print(f"   expected: {case['expected']}")
+		print(f"   needle: {json.dumps(calls, separators=(',', ':'))}")
+		if args.rust_action:
+			print(f"   action: {rust_action_line(calls)}")
+
+	if failures:
+		print(f"\n{failures} demo case(s) differed from the expected tool name.")
+		return 1
+	print("\nAll demo cases matched the expected tool names.")
+	return 0
+
+
 def cmd_playground(args: argparse.Namespace) -> int:
 	command = ["needle", "playground", "--host", args.host, "--port", str(args.port)]
 	if args.checkpoint:
@@ -111,6 +165,14 @@ def build_parser() -> argparse.ArgumentParser:
 	run.add_argument("--pretty", action="store_true")
 	run.add_argument("--rust-action", action="store_true", help="Convert the first call to ACTION: ... for browser-use-rust.")
 	run.set_defaults(func=cmd_run)
+
+	demo = sub.add_parser("demo", help="Run a Needle-only function-calling demo suite.")
+	demo.add_argument("--checkpoint", help="Local checkpoint path or Hugging Face model filename.")
+	demo.add_argument("--max-gen-len", type=int, default=512)
+	demo.add_argument("--no-constrained", action="store_true")
+	demo.add_argument("--force-download", action="store_true")
+	demo.add_argument("--rust-action", action="store_true", help="Also print ACTION: ... lines for browser-use-rust.")
+	demo.set_defaults(func=cmd_demo)
 
 	playground = sub.add_parser("playground", help="Launch Needle's bundled playground UI.")
 	playground.add_argument("--host", default="127.0.0.1")

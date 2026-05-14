@@ -55,6 +55,9 @@ Current smoke-test behavior:
 ## Useful Commands
 
 ```bash
+# Run a small Needle-only function-calling demo suite.
+uv run buneedle demo --rust-action
+
 # Print the preset tool schema Needle receives.
 uv run buneedle tools --preset browser-use-rust --pretty
 
